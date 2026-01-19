@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -32,13 +31,10 @@ async def _issue_captcha(user_id: int, token: str) -> tuple[bool, int, int]:
         user = result.scalar_one_or_none()
         if not user or not user.web_token or user.web_token != token:
             return False, a, b
-        user.web_captcha_answer = str(a + b)
-        user.web_captcha_at = datetime.now(timezone.utc)
-        await session.commit()
     return True, a, b
 
 
-async def _process_check(user_id: int, token: str, ip: str, answer: str) -> bool:
+async def _process_check(user_id: int, token: str, ip: str, answer: str, a: int, b: int) -> bool:
     session_factory = get_session_factory()
     async with session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -47,7 +43,11 @@ async def _process_check(user_id: int, token: str, ip: str, answer: str) -> bool
             session.add(WebCheck(user_id=user_id, ip=ip, status="fail"))
             await session.commit()
             return False
-        if not user.web_captcha_answer or user.web_captcha_answer != answer.strip():
+        try:
+            expected = str(int(a) + int(b))
+        except Exception:
+            expected = ""
+        if answer.strip() != expected:
             session.add(WebCheck(user_id=user_id, ip=ip, status="fail"))
             await session.commit()
             return False
@@ -76,9 +76,16 @@ async def verify_page(request: Request, user_id: int, token: str):
 
 
 @router.post("/verify", response_class=HTMLResponse)
-async def verify_submit(request: Request, user_id: int = Form(...), token: str = Form(...), answer: str = Form(...)):
+async def verify_submit(
+    request: Request,
+    user_id: int = Form(...),
+    token: str = Form(...),
+    answer: str = Form(...),
+    a: int = Form(...),
+    b: int = Form(...),
+):
     ip = _client_ip(request)
-    ok = await _process_check(user_id, token, ip, answer)
+    ok = await _process_check(user_id, token, ip, answer, a, b)
     if ok:
         return _templates.TemplateResponse(
             "verify.html",
@@ -99,9 +106,9 @@ async def verify_submit(request: Request, user_id: int = Form(...), token: str =
 
 
 @router.get("/api/verify")
-async def verify_api(request: Request, user_id: int, token: str, answer: str = ""):
+async def verify_api(request: Request, user_id: int, token: str, answer: str = "", a: int = 0, b: int = 0):
     ip = _client_ip(request)
-    ok = await _process_check(user_id, token, ip, answer)
+    ok = await _process_check(user_id, token, ip, answer, a, b)
     return JSONResponse({"status": "success" if ok else "fail"})
 
 

@@ -22,6 +22,8 @@
       <form method="post" action="/verify">
         <input type="hidden" name="user_id" value="{{ user_id }}">
         <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="a" value="{{ a }}">
+        <input type="hidden" name="b" value="{{ b }}">
         <div style="font-size: 22px; margin: 16px 0;"><b>{{ a }} + {{ b }}</b></div>
         <input type="text" name="answer" placeholder="Введите ответ" required style="padding:10px;width:200px;">
         <div style="margin-top: 16px;">
@@ -34,6 +36,8 @@
       <form method="post" action="/verify">
         <input type="hidden" name="user_id" value="{{ user_id }}">
         <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="a" value="{{ a }}">
+        <input type="hidden" name="b" value="{{ b }}">
         <div style="font-size: 22px; margin: 16px 0;"><b>{{ a }} + {{ b }}</b></div>
         <input type="text" name="answer" placeholder="Введите ответ" required style="padding:10px;width:200px;">
         <div style="margin-top: 16px;">
