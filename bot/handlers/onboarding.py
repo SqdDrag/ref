@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
@@ -75,14 +75,20 @@ async def _ensure_web_token(user: User) -> str:
         return token
 
 
-async def _continue_flow(message: Message, state: FSMContext) -> None:
+async def _continue_flow(message: Message, state: FSMContext, user_id: int | None = None) -> None:
+    target_user_id = user_id or (message.from_user.id if message.from_user else message.chat.id)
     session_factory = get_session_factory()
     async with session_factory() as session:
-        result = await session.execute(select(User).where(User.id == message.from_user.id))
+        result = await session.execute(select(User).where(User.id == target_user_id))
         user = result.scalar_one_or_none()
     if not user:
-        await message.answer("Ошибка пользователя")
-        return
+        await _get_or_create_user(message, _parse_referrer_id(message.text))
+        async with session_factory() as session:
+            result = await session.execute(select(User).where(User.id == target_user_id))
+            user = result.scalar_one_or_none()
+        if not user:
+            await message.answer("Ошибка пользователя")
+            return
     if user.is_blocked:
         await message.answer("⛔ Доступ ограничен. Если считаете это ошибкой, обратитесь в поддержку.")
         return
@@ -96,7 +102,7 @@ async def _continue_flow(message: Message, state: FSMContext) -> None:
                     db_user.web_verified = True
                     db_user.captcha_passed = True
                     await session.commit()
-            await _continue_flow(message, state)
+            await _continue_flow(message, state, user_id=target_user_id)
             return
         token = await _ensure_web_token(user)
         link = await build_web_link(user.id, token)
@@ -167,7 +173,7 @@ async def web_check_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.message:
         await callback.message.edit_text("✅ Проверка пройдена. Продолжаем активацию.")
     await callback.answer()
-    await _continue_flow(callback.message, state)
+    await _continue_flow(callback.message, state, user_id=callback.from_user.id)
 
 
 @router.callback_query(F.data == "check_subs")
