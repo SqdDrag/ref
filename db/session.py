@@ -13,7 +13,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def _ssl_required() -> bool:
-    return _settings.sslmode_require
+    return getattr(_settings, "sslmode_require", False)
 
 
 def _ssl_context() -> ssl.SSLContext | None:
