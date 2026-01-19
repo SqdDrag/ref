@@ -1,7 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import hmac
+import os
 import secrets
+import time
 from datetime import datetime, timezone
+from hashlib import sha256
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -15,6 +19,9 @@ from db.session import get_session_factory
 router = APIRouter()
 _templates = Jinja2Templates(directory="web/templates")
 
+_CAPTCHA_TTL = 300
+_CAPTCHA_SECRET = os.getenv("CAPTCHA_SECRET", "dev-secret")
+
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
@@ -23,36 +30,43 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-async def _issue_captcha(user_id: int, token: str) -> tuple[bool, int, int]:
+def _sign(payload: str) -> str:
+    return hmac.new(_CAPTCHA_SECRET.encode("utf-8"), payload.encode("utf-8"), sha256).hexdigest()
+
+
+def _build_captcha(user_id: int, token: str) -> dict:
     a = secrets.randbelow(7) + 2
     b = secrets.randbelow(7) + 2
+    ts = int(time.time())
+    nonce = secrets.token_urlsafe(8)
+    payload = f"{user_id}:{token}:{a}:{b}:{ts}:{nonce}"
+    sig = _sign(payload)
+    return {"a": a, "b": b, "ts": ts, "nonce": nonce, "sig": sig}
+
+
+def _verify_captcha(user_id: int, token: str, a: int, b: int, ts: int, nonce: str, sig: str, answer: str) -> bool:
+    if int(time.time()) - ts > _CAPTCHA_TTL:
+        return False
+    payload = f"{user_id}:{token}:{a}:{b}:{ts}:{nonce}"
+    if not hmac.compare_digest(_sign(payload), sig):
+        return False
+    return answer.strip() == str(int(a) + int(b))
+
+
+async def _token_ok(user_id: int, token: str) -> bool:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        return bool(user and user.web_token and user.web_token == token)
+
+
+async def _finish_verification(user_id: int, token: str, ip: str) -> bool:
     session_factory = get_session_factory()
     async with session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user or not user.web_token or user.web_token != token:
-            return False, a, b
-        user.web_captcha_answer = str(a + b)
-        user.web_captcha_at = datetime.now(timezone.utc)
-        await session.commit()
-    return True, a, b
-
-
-async def _process_check(user_id: int, token: str, ip: str, answer: str, a: int, b: int) -> bool:
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        result = await session.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        if not user or not user.web_token or user.web_token != token:
-            session.add(WebCheck(user_id=user_id, ip=ip, status="fail"))
-            await session.commit()
-            return False
-        try:
-            expected = str(int(a) + int(b))
-        except Exception:
-            expected = ""
-        provided = answer.strip()
-        if provided != expected and (not user.web_captcha_answer or provided != user.web_captcha_answer):
             session.add(WebCheck(user_id=user_id, ip=ip, status="fail"))
             await session.commit()
             return False
@@ -73,10 +87,15 @@ async def _process_check(user_id: int, token: str, ip: str, answer: str, a: int,
 
 @router.get("/verify", response_class=HTMLResponse)
 async def verify_page(request: Request, user_id: int, token: str):
-    ok, a, b = await _issue_captcha(user_id, token)
+    if not await _token_ok(user_id, token):
+        return _templates.TemplateResponse(
+            "verify.html",
+            {"request": request, "status": "fail"},
+        )
+    captcha = _build_captcha(user_id, token)
     return _templates.TemplateResponse(
         "verify.html",
-        {"request": request, "status": "captcha" if ok else "fail", "a": a, "b": b, "user_id": user_id, "token": token},
+        {"request": request, "status": "captcha", "user_id": user_id, "token": token, **captcha},
     )
 
 
@@ -88,33 +107,29 @@ async def verify_submit(
     answer: str = Form(...),
     a: int = Form(...),
     b: int = Form(...),
+    ts: int = Form(...),
+    nonce: str = Form(...),
+    sig: str = Form(...),
 ):
     ip = _client_ip(request)
-    ok = await _process_check(user_id, token, ip, answer, a, b)
-    if ok:
+    ok = _verify_captcha(user_id, token, a, b, ts, nonce, sig, answer)
+    if not ok:
+        captcha = _build_captcha(user_id, token)
         return _templates.TemplateResponse(
             "verify.html",
-            {"request": request, "status": "success"},
+            {
+                "request": request,
+                "status": "retry",
+                "user_id": user_id,
+                "token": token,
+                **captcha,
+            },
         )
-    issued, a, b = await _issue_captcha(user_id, token)
+    verified = await _finish_verification(user_id, token, ip)
     return _templates.TemplateResponse(
         "verify.html",
-        {
-            "request": request,
-            "status": "retry" if issued else "fail",
-            "a": a,
-            "b": b,
-            "user_id": user_id,
-            "token": token,
-        },
+        {"request": request, "status": "success" if verified else "fail"},
     )
-
-
-@router.get("/api/verify")
-async def verify_api(request: Request, user_id: int, token: str, answer: str = "", a: int = 0, b: int = 0):
-    ip = _client_ip(request)
-    ok = await _process_check(user_id, token, ip, answer, a, b)
-    return JSONResponse({"status": "success" if ok else "fail"})
 
 
 @router.get("/api/check-status")
@@ -126,5 +141,3 @@ async def check_status(user_id: int):
         if not user or not user.web_verified:
             return JSONResponse({"status": "fail"})
     return JSONResponse({"status": "success"})
-
-
