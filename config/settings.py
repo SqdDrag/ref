@@ -34,12 +34,17 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/refbot")
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if database_url.startswith("postgresql://") and "asyncpg" not in database_url:
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return Settings(
         bot_token=os.getenv("BOT_TOKEN", ""),
         api_id=int(os.getenv("API_ID", "0")),
         api_hash=os.getenv("API_HASH", ""),
         userbot_session=os.getenv("USERBOT_SESSION", ""),
-        database_url=os.getenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/refbot"),
+        database_url=database_url,
         web_base_url=os.getenv("WEB_BASE_URL", "http://localhost:8000"),
         web_api_base_url=os.getenv("WEB_API_BASE_URL", "http://localhost:8000/api"),
         mandatory_channels=_split_env(os.getenv("MANDATORY_CHANNELS", "")),
