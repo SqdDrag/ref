@@ -1,4 +1,5 @@
 import asyncpg
+import ssl
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -11,10 +12,22 @@ _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
+def _ssl_required() -> bool:
+    url = make_url(_settings.database_url)
+    return url.query.get("sslmode") == "require"
+
+def _is_managed_host() -> bool:
+    url = make_url(_settings.database_url)
+    host = url.host or ""
+    return host.endswith(".render.com")
+
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = create_async_engine(_settings.database_url, echo=False, pool_pre_ping=True)
+        connect_args = {"ssl": ssl.create_default_context()} if _ssl_required() else {}
+        _engine = create_async_engine(
+            _settings.database_url, echo=False, pool_pre_ping=True, connect_args=connect_args
+        )
     return _engine
 
 
@@ -30,16 +43,23 @@ async def get_session() -> AsyncSession:
 
 
 async def ensure_database() -> None:
+    if _is_managed_host():
+        return
     url = make_url(_settings.database_url)
     db_name = url.database
     admin_url = url.set(database="postgres")
-    conn = await asyncpg.connect(
-        user=admin_url.username,
-        password=admin_url.password,
-        host=admin_url.host,
-        port=admin_url.port or 5432,
-        database=admin_url.database,
-    )
+    ssl_arg = ssl.create_default_context() if _ssl_required() else None
+    try:
+        conn = await asyncpg.connect(
+            user=admin_url.username,
+            password=admin_url.password,
+            host=admin_url.host,
+            port=admin_url.port or 5432,
+            database=admin_url.database,
+            ssl=ssl_arg,
+        )
+    except Exception:
+        return
     try:
         exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
         if not exists:
