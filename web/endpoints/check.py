@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -31,6 +32,9 @@ async def _issue_captcha(user_id: int, token: str) -> tuple[bool, int, int]:
         user = result.scalar_one_or_none()
         if not user or not user.web_token or user.web_token != token:
             return False, a, b
+        user.web_captcha_answer = str(a + b)
+        user.web_captcha_at = datetime.now(timezone.utc)
+        await session.commit()
     return True, a, b
 
 
@@ -47,7 +51,8 @@ async def _process_check(user_id: int, token: str, ip: str, answer: str, a: int,
             expected = str(int(a) + int(b))
         except Exception:
             expected = ""
-        if answer.strip() != expected:
+        provided = answer.strip()
+        if provided != expected and (not user.web_captcha_answer or provided != user.web_captcha_answer):
             session.add(WebCheck(user_id=user_id, ip=ip, status="fail"))
             await session.commit()
             return False
