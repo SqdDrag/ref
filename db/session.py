@@ -13,8 +13,7 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def _ssl_required() -> bool:
-    url = make_url(_settings.database_url)
-    return url.query.get("sslmode") == "require"
+    return _settings.sslmode_require
 
 
 def _ssl_context() -> ssl.SSLContext | None:
@@ -36,7 +35,10 @@ def get_engine() -> AsyncEngine:
         ssl_ctx = _ssl_context()
         connect_args = {"ssl": ssl_ctx} if ssl_ctx else {}
         _engine = create_async_engine(
-            _settings.database_url, echo=False, pool_pre_ping=True, connect_args=connect_args
+            _settings.database_url,
+            echo=False,
+            pool_pre_ping=True,
+            connect_args=connect_args,
         )
     return _engine
 
