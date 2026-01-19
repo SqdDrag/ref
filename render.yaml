@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: refbot-web
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn web.main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: refbot-db
+          property: connectionString
+      - key: WEB_BASE_URL
+        value: https://refbot-web.onrender.com
+      - key: WEB_API_BASE_URL
+        value: https://refbot-web.onrender.com/api
+      - key: SKIP_WEB_CHECK
+        value: "0"
+
+  - type: worker
+    name: refbot-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot/main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: refbot-db
+          property: connectionString
+      - key: WEB_BASE_URL
+        value: https://refbot-web.onrender.com
+      - key: WEB_API_BASE_URL
+        value: https://refbot-web.onrender.com/api
+      - key: SKIP_WEB_CHECK
+        value: "0"
+
+# Uncomment to add userbot worker
+#  - type: worker
+#    name: refbot-userbot
+#    env: python
+#    plan: free
+#    buildCommand: pip install -r requirements.txt
+#    startCommand: python userbot/main.py
+#    envVars:
+#      - key: API_ID
+#        sync: false
+#      - key: API_HASH
+#        sync: false
+#      - key: USERBOT_SESSION
+#        sync: false
+#      - key: DATABASE_URL
+#        fromDatabase:
+#          name: refbot-db
+#          property: connectionString
+
+databases:
+  - name: refbot-db
+    plan: free

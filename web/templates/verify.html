@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Проверка</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; }
+    .wrap { max-width: 640px; margin: 80px auto; background: #fff; padding: 32px; border-radius: 12px; text-align: center; }
+    .ok { color: #0a7d28; }
+    .fail { color: #b21b1b; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    {% if status == "success" %}
+      <h2 class="ok">Проверка пройдена</h2>
+      <p>Вернитесь в Telegram-бот и нажмите кнопку проверки.</p>
+    {% elif status == "captcha" %}
+      <h2>Капча</h2>
+      <p>Решите пример, чтобы подтвердить, что вы не бот.</p>
+      <form method="post" action="/verify">
+        <input type="hidden" name="user_id" value="{{ user_id }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div style="font-size: 22px; margin: 16px 0;"><b>{{ a }} + {{ b }}</b></div>
+        <input type="text" name="answer" placeholder="Введите ответ" required style="padding:10px;width:200px;">
+        <div style="margin-top: 16px;">
+          <button type="submit" style="padding:10px 18px;">Проверить</button>
+        </div>
+      </form>
+    {% elif status == "retry" %}
+      <h2 class="fail">Неверный ответ</h2>
+      <p>Попробуйте еще раз.</p>
+      <form method="post" action="/verify">
+        <input type="hidden" name="user_id" value="{{ user_id }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div style="font-size: 22px; margin: 16px 0;"><b>{{ a }} + {{ b }}</b></div>
+        <input type="text" name="answer" placeholder="Введите ответ" required style="padding:10px;width:200px;">
+        <div style="margin-top: 16px;">
+          <button type="submit" style="padding:10px 18px;">Проверить</button>
+        </div>
+      </form>
+    {% else %}
+      <h2 class="fail">Проверка не пройдена</h2>
+      <p>Доступ ограничен или токен неверен.</p>
+    {% endif %}
+  </div>
+</body>
+</html>
+
+
