@@ -26,8 +26,6 @@ class User(Base):
     ref_rewarded: Mapped[bool] = mapped_column(Boolean, default=False)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     web_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    web_captcha_answer: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    web_captcha_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     referrer = relationship("User", remote_side=[id], uselist=False)
 

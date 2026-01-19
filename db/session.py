@@ -82,5 +82,4 @@ async def ensure_database() -> None:
 
 async def ensure_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS web_captcha_answer VARCHAR(16)"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS web_captcha_at TIMESTAMPTZ"))
+        return
